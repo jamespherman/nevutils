@@ -7,7 +7,7 @@ function out = read_nsx(filename,varargin)
 %
 % Can specify 'begsample', 'endsample', 'chanindx', 'readdata' as varargin
 %
-
+% Can read NFx data as well
 %% Ignore MATLAB's complaints about code optimization:
 %#ok<*NASGU>
 %#ok<*AGROW>
@@ -32,6 +32,8 @@ keepint = p.Results.keepint;
 allowpause = p.Results.allowpause;
 
 packetHeaderBytes = 9;
+bytesPerPoint = 2;
+dataType = '*int16';
 %% open file
 fh   = fopen(filename, 'rb','n','UTF-8');
 %% get file size
@@ -41,7 +43,13 @@ fseek(fh, 0, -1);
 %% check if valid nsx 2.2 file
 fid  = fread(fh, 8, '*char')';
 if ~strcmp(fid, 'NEURALCD') %note: <-might use this for ft_filetype
-    error('Not Valid NSx 2.2 file');
+    if strcmp(fid,'NEUCDFLT') % nfx file
+        bytesPerPoint = 4;
+        dataType = '*single';
+        fprintf('Changing bytesPerPoint to 4 and dataType to *single for NFx file\n');
+    else
+        error('Not Valid NSx 2.2 file or NFx file');
+    end
 end
 fseek(fh, 2, 0); %skip file spec
 %% get bytes in headers (used to jump to begining of data)
@@ -88,7 +96,7 @@ while (filesize-ftell(fh))>packetHeaderBytes %changed from while ftell<filesize 
         remainingBytes = filesize-currentByte; %This should be right, but I might need a +1 or a -1 or something... -ACS
         ndataPoints(k) = uint32(floor(0.5.*remainingBytes./double(chanCount))); 
     end
-    status = fseek(fh,(2*double(ndataPoints(k))*double(chanCount)),0);
+    status = fseek(fh,(bytesPerPoint*double(ndataPoints(k))*double(chanCount)),0);
     if status<0 %tried to seek past EOF, indicates corrupted file
         warning('read_nsx:fileCorrupted','Corrupted file %s has invalid packet information. Data recovery will be attempted, but inspect carefully.',filename);
         fseek(fh,bytesInHeaders+packetHeaderBytes,-1); %go back to the beginning        
@@ -113,7 +121,7 @@ if readdata
     if any(chanindx<0),chanindx=1:chanCount;end
     fseek(fh, bytesInHeaders, -1);
     % number of samples to skip can't go below 0 (i.e. make sure we can keep the first data point!)
-    bytes2skip = max((begsample-1)*2*double(chanCount), 0); %this should be the number of data samples to skip... -ACS 09May2012 %-re-casted chanCount as double to avoid misreading huge files -ACS 16Jun2015
+    bytes2skip = max((begsample-1)*bytesPerPoint*double(chanCount), 0); %this should be the number of data samples to skip... -ACS 09May2012 %-re-casted chanCount as double to avoid misreading huge files -ACS 16Jun2015
     bytes2skip = bytes2skip+packetHeaderBytes*sum(begsample>nvec); %this should add on the little headers before each data block... -ACS
     fseek(fh, bytes2skip, 0); %The initial bytes to skip
     % changed >= begsample to > begsample to account for reading from the very start... I think that's correct? --ESC
@@ -121,15 +129,15 @@ if readdata
     if length(dataBlockBounds) == 2 % under normal circumstances (no pause), we should only have two points--the beginning and end of file
         if ~any(dataBlockBounds) %if there are no block boundaries in the requested data segment
             %just pull out the block of data:
-            data = fread(fh,[chanCount,endsample-begsample+1],'*int16');
+            data = fread(fh,[chanCount,endsample-begsample+1],dataType);
         elseif ~puntForPauses %if there are block boundaries in the requested data segment %...and a specific 'trial' wasn't requested -ACS 19Dec2013
-            endByte = 9*sum(dataBlockBounds)+(endsample*2*chanCount); %this should be the position of the last requested sample in the file... -ACS
+            endByte = 9*sum(dataBlockBounds)+(endsample*bytesPerPoint*chanCount); %this should be the position of the last requested sample in the file... -ACS
             currentSample = begsample;
             dataInd = 1;
             while ftell(fh)<endByte
                 nextBound = nvec(find(nvec>currentSample,1,'first'));
                 nextBound = min(nextBound,endsample);
-                data(:,dataInd:nextBound-currentSample+dataInd) = fread(fh,[chanCount,nextBound-currentSample+1],'*int16');
+                data(:,dataInd:nextBound-currentSample+dataInd) = fread(fh,[chanCount,nextBound-currentSample+1],dataType);
                 dataInd = nextBound-currentSample+dataInd+1;
                 currentSample = nextBound+1;
                 if ftell(fh)<(filesize-9)
@@ -143,13 +151,13 @@ if readdata
     else
         if ~puntForPauses %if there are block boundaries in the requested data segment %...and a specific 'trial' wasn't requested -ACS 19Dec2013
             % keeping this here retains prior functionality for requesting the entire datafile but not aligning to trials
-            endByte = 9*sum(dataBlockBounds)+(endsample*2*chanCount); %this should be the position of the last requested sample in the file... -ACS
+            endByte = 9*sum(dataBlockBounds)+(endsample*bytesPerPoint*chanCount); %this should be the position of the last requested sample in the file... -ACS
             currentSample = begsample;
             dataInd = 1;
             while ftell(fh)<endByte
                 nextBound = nvec(find(nvec>currentSample,1,'first'));
                 nextBound = min(nextBound,endsample);
-                data(:,dataInd:nextBound-currentSample+dataInd) = fread(fh,[chanCount,nextBound-currentSample+1],'*int16');
+                data(:,dataInd:nextBound-currentSample+dataInd) = fread(fh,[chanCount,nextBound-currentSample+1],dataType);
                 dataInd = nextBound-currentSample+dataInd+1;
                 currentSample = nextBound+1;
                 if ftell(fh)<(filesize-9)
@@ -171,19 +179,19 @@ if readdata
 
             fseek(fh, bytesInHeaders, -1);
             % number of samples to skip can't go below 0 (i.e. make sure we can keep the first data point!)
-            bytes2skip = max((begsampleInSamples-1)*2*double(chanCount), 0); %this should be the number of data samples to skip... -ACS 09May2012 %-re-casted chanCount as double to avoid misreading huge files -ACS 16Jun2015
+            bytes2skip = max((begsampleInSamples-1)*bytesPerPoint*double(chanCount), 0); %this should be the number of data samples to skip... -ACS 09May2012 %-re-casted chanCount as double to avoid misreading huge files -ACS 16Jun2015
             bytes2skip = bytes2skip+packetHeaderBytes*sum(begsampleInSamples>nvec); %this should add on the little headers before each data block... -ACS
             fseek(fh, bytes2skip, 0); %The initial bytes to skip
             
-            endByteOrig = 9*sum(dataBlockBounds)+(endsample*2*chanCount); %this should be the position of the last requested sample in the file... -ACS
-            endByte = 9*sum(dataBlockBounds)+(endsampleInSamples*2*chanCount);
+            endByteOrig = 9*sum(dataBlockBounds)+(endsample*bytesPerPoint*chanCount); %this should be the position of the last requested sample in the file... -ACS
+            endByte = 9*sum(dataBlockBounds)+(endsampleInSamples*bytesPerPoint*chanCount);
             currentSample = begsampleInSamples;
             dataInd = 1;
             while ftell(fh)<endByte
                 nextBoundInd = find(nvec>currentSample,1,'first');
                 nextBound = nvec(nextBoundInd);
                 nextBound = min(nextBound,endsample);
-                data(:,dataInd:nextBound-currentSample+dataInd) = double(fread(fh,[chanCount,nextBound-currentSample+1],'*int16'));
+                data(:,dataInd:nextBound-currentSample+dataInd) = double(fread(fh,[chanCount,nextBound-currentSample+1],dataType));
                 dataInd = nextBound-currentSample+dataInd+1;
                 if nextBoundInd <= size(timeInSamples,2)
                     blankDataSamples = timeInSamples(1, nextBoundInd) - timeInSamples(2, nextBoundInd-1);
@@ -197,7 +205,7 @@ if readdata
             end
         end
     end
-    if ~keepint
+    if ~keepint && bytesPerPoint==2
         out.data = bsxfun(@times,double(data(chanindx,:)),double(scale(chanindx)));
     else
         out.data = data;
