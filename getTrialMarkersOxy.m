@@ -1,4 +1,4 @@
-function [oxy_trialstartinds] = getTrialMarkersOxy(nirs_data,nmarkers, varargin)
+function [oxy_trialstartinds,dat] = getTrialMarkersOxy(nirs_data,nmarkers, varargin)
 % extract trial markers for NIRS data. Trial markers are sent to the oxymon
 %      - nirs_data: structure output of oxy2mat conversion
 %      - nmarkers: expected number of trial markers
