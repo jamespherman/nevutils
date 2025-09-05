@@ -42,7 +42,9 @@ The primary data processing pipeline in NEV-Utils follows a two-step process tha
 -   `dat2ex`: The second step for structuring the parsed data for analysis.
 
 ### File Handling and Reading
--   `readNEV`: A MEX-optimized function to read data from `.nev` files.
+-   `readNEV` and `read_nev`: These functions are used to read data from `.nev` files.
+    -   `readNEV` is a high-performance, MEX-optimized function designed for speed and efficiency, making it ideal for large datasets. It is compiled from C source (`readNEV.c`) and is the recommended function for most use cases.
+    -   `read_nev` is a pure MATLAB script that provides a more portable and readable alternative. While slower than its MEX counterpart, it does not require a C compiler and can be more easily inspected or modified if needed.
 -   `read_nsx`: A pure MATLAB function to read data from `.nsx` files, compatible with the FieldTrip toolbox format.
 -   `concatenateNevFiles`: A high-level script to process and concatenate multiple `.nev` files and their associated data.
 -   `combineNsx`: A utility to combine multiple `.nsx` files, filling time gaps with `NaN`s to maintain a continuous timeline.
